@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <stdio.h>
-
 
 typedef struct s_sh
 {
@@ -15,13 +13,13 @@ typedef struct s_sh
 	int excode;
 } t_sh;
 
-typedef enum e_error
+enum e_error
 {
 	FATAL,
 	EXE,
 	BAD_ARG,
-	CHANGE_DIR
-} t_error;
+	BAD_DIR,
+};
 
 int ft_strequ(char *s1, char *s2)
 {
@@ -38,28 +36,28 @@ int ft_strlen(char *s)
 	return (i);
 }
 
-void ft_putstr_fd(char *s, int fd)
+void ft_eprint(char *s)
 {
-	write(fd, s, ft_strlen(s));
+	write(2, s, ft_strlen(s));
 }
 
-int str_error(int ecode, char *arg)
+int errmsg(int err, char *arg)
 {
-	if (ecode == FATAL)
-		ft_putstr_fd("error: fatal\n", 2);
-	if (ecode == EXE)
+	if (err == FATAL)
+		ft_eprint("error: fatal\n");
+	if (err == EXE)
 	{
-		ft_putstr_fd("error: cannot execute ", 2);
-		ft_putstr_fd(arg, 2);
-		ft_putstr_fd("\n", 2);
+		ft_eprint("error: cannot execute ");
+		ft_eprint(arg);
+		ft_eprint("\n");
 	}
-	if (ecode == BAD_ARG)
-		ft_putstr_fd("error: cd: bad arguments\n", 2);
-	if (ecode == CHANGE_DIR)
+	if (err == BAD_ARG)
+		ft_eprint("error: cd: bad arguments\n");
+	if (err == BAD_DIR)
 	{
-		ft_putstr_fd("error: cd: cannot change directory to ", 2);
-		ft_putstr_fd(arg, 2);
-		ft_putstr_fd("\n", 2);
+		ft_eprint("error: cd: cannot change directory to ");
+		ft_eprint(arg);
+		ft_eprint("\n");
 	}
 	return (EXIT_FAILURE);
 }
@@ -68,6 +66,7 @@ char **make_arg(t_sh *sh)
 {
 	int cnt = 0;
 	int idx = sh->idx;
+
 	while (sh->cmd[sh->idx]
 		&& !ft_strequ(sh->cmd[sh->idx], ";")
 		&& !ft_strequ(sh->cmd[sh->idx], "|"))
@@ -75,9 +74,10 @@ char **make_arg(t_sh *sh)
 		cnt++;
 		sh->idx++;
 	}
+	
 	char **res = malloc(sizeof(char*) * (cnt + 1));
 	if (!res)
-		return (0);
+		exit(errmsg(FATAL, NULL));
 	int i = 0;
 	while (i < cnt)
 		res[i++] = sh->cmd[idx++];
@@ -85,19 +85,17 @@ char **make_arg(t_sh *sh)
 	return (res);
 }
 
-void cd_btin(t_sh *sh)
+void btin(t_sh *sh)
 {
 	char **arg = make_arg(sh);
-	if (!arg)
-		exit(str_error(FATAL, NULL));
-
 	int cnt = 0;
+
 	while (arg[cnt])
 		cnt++;
 	if (cnt != 2)
-		sh->excode = str_error(BAD_ARG, NULL);
+		sh->excode = errmsg(BAD_ARG, NULL);
 	else if (chdir(arg[1]) == -1)
-		sh->excode = str_error(CHANGE_DIR, NULL);
+		sh->excode = errmsg(BAD_DIR, arg[1]);
 	else
 		sh->excode = 0;
 	free(arg);
@@ -105,69 +103,47 @@ void cd_btin(t_sh *sh)
 
 int count_pipes(t_sh *sh)
 {
-	int i;
-	int cnt;
-
-	cnt = 0;
-	i = sh->idx;
-	while (sh->cmd[i] && !ft_strequ(sh->cmd[i], ";"))
+	int cnt = 0;
+	int idx = sh->idx;
+	while (sh->cmd[idx]
+		&& !ft_strequ(sh->cmd[idx], ";"))
 	{
-		if (ft_strequ(sh->cmd[i], "|"))
+		if (ft_strequ(sh->cmd[idx], "|"))
 			cnt++;
-		i++;
+		idx++;
 	}
 	return (cnt);
 }
 
-void create_pipes(int pipes[], int cnt)
+void create_pipes(int pipes[], int nb_pipe)
 {
 	int i = 0;
-	while (i < cnt)
+	while (i < nb_pipe)
 	{
 		if (pipe(pipes + (i * 2)) < 0)
-			exit(str_error(FATAL, NULL));
+			exit(errmsg(FATAL, NULL));
 		i++;
 	}
 }
 
-void close_all(int pipes[], int cnt)
+void close_all(int pipes[], int nb_pipe)
 {
 	int i = 0;
-	while (i < 2 * cnt)
+	while (i < 2 * nb_pipe)
 		close(pipes[i++]);
-}
-
-void dup2_and_close_pipes(int pipes[], int i, int cnt)
-{
-	if (i < cnt)
-		dup2(pipes[i * 2 + 1], 1);
-	if (i > 0)
-		dup2(pipes[(i - 1) * 2], 0);
-	close_all(pipes, cnt);
-}
-
-void exec_non_btin(t_sh *sh, char **arg)
-{
-	execve(arg[0], arg, sh->env);
-	exit(str_error(EXE, arg[0]));
 }
 
 void get_exit_code(t_sh *sh, int status)
 {
 	if (WIFEXITED(status))
 		sh->excode = WEXITSTATUS(status);
-	else if (WIFSIGNALED(status))
-		sh->excode = 128 + WTERMSIG(status);
 }
 
-void close_pipes_and_wait(t_sh *sh, int pipes[], int cnt, int cpids[])
+void wait_and_get_exit_code(t_sh *sh, int cpids[], int nb_pipe)
 {
 	int status;
-	int i;
-
-	close_all(pipes, cnt);
-	i = 0;
-	while (i < cnt + 1)
+	int i = 0;
+	while (i < nb_pipe + 1)
 	{
 		waitpid(cpids[i], &status, 0);
 		i++;
@@ -175,32 +151,37 @@ void close_pipes_and_wait(t_sh *sh, int pipes[], int cnt, int cpids[])
 	get_exit_code(sh, status);
 }
 
-void piping(t_sh *sh, int cnt)
+void piping(t_sh *sh, int nb_pipe)
 {
-	int pipes[cnt * 2]; // nb pipe * 2
-	int cpids[cnt + 1]; // A | B
+	int pipes[nb_pipe * 2];
+	int cpids[nb_pipe + 1];
 
-	create_pipes(pipes, cnt);
+	create_pipes(pipes, nb_pipe);
 	int i = 0;
 	char **arg;
-	while (i < cnt + 1)
+	while (i < nb_pipe + 1)
 	{
 		if (ft_strequ(sh->cmd[sh->idx], "|"))
 			sh->idx++;
 		arg = make_arg(sh);
-		if (!arg)
-			exit(str_error(FATAL, NULL));
 		cpids[i] = fork();
+		if (cpids[i] < 0)
+			exit(errmsg(FATAL, NULL));
 		if (cpids[i] == 0)
 		{
-			dup2_and_close_pipes(pipes, i, cnt);
-			exec_non_btin(sh, arg);
-		} else if (cpids[i] < 0)
-			exit(str_error(FATAL, NULL));
+			if (i < nb_pipe)
+				dup2(pipes[i * 2 + 1], 1);
+			if (i > 0)
+				dup2(pipes[(i - 1) * 2], 0);
+			close_all(pipes, nb_pipe);
+			execve(arg[0], arg, sh->env);
+			exit(errmsg(EXE, arg[0]));
+		}
 		free(arg);
 		i++;
 	}
-	close_pipes_and_wait(sh, pipes, cnt, cpids);
+	close_all(pipes, nb_pipe);
+	wait_and_get_exit_code(sh, cpids, nb_pipe);
 }
 
 void non_btin(t_sh *sh)
@@ -209,13 +190,14 @@ void non_btin(t_sh *sh)
 	int status;
 	char **arg = make_arg(sh);
 
-	if (!arg)
-		exit(str_error(FATAL, NULL));
 	cpid = fork();
 	if (cpid < 0)
-		exit(str_error(FATAL, NULL));
+		exit(errmsg(FATAL, NULL));
 	if (cpid == 0)
-		exec_non_btin(sh, arg);
+	{
+		execve(arg[0], arg, sh->env);
+		exit(errmsg(EXE, arg[0]));
+	}
 	else
 	{
 		free(arg);
@@ -224,24 +206,25 @@ void non_btin(t_sh *sh)
 	}
 }
 
-int main(int ac, char **cmd, char **env)
+int main(int ac, char **av, char **env)
 {
-	t_sh sh;
-	int cnt;
-
 	(void)ac;
-	sh.cmd = cmd;
+
+	t_sh sh;
+	sh.cmd = av;
 	sh.env = env;
 	sh.idx = 1;
 	sh.excode = 0;
-	while (cmd[sh.idx])
+	int nb_pipe;
+
+	while (sh.cmd[sh.idx])
 	{
-		if (ft_strequ(cmd[sh.idx], ";") && sh.idx++)
-			continue;
-		if (ft_strequ(cmd[sh.idx], "cd"))
-			cd_btin(&sh);
-		else if ((cnt = count_pipes(&sh)))
-			piping(&sh, cnt);
+		if (ft_strequ(sh.cmd[sh.idx], ";"))
+			sh.idx++;
+		else if (ft_strequ(sh.cmd[sh.idx], "cd"))
+			btin(&sh);
+		else if ((nb_pipe = count_pipes(&sh)))
+			piping(&sh, nb_pipe);
 		else
 			non_btin(&sh);
 	}
