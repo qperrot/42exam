@@ -133,22 +133,19 @@ void close_all(int pipes[], int nb_pipe)
 		close(pipes[i++]);
 }
 
-void get_exit_code(t_sh *sh, int status)
+void get_excode(t_sh *sh, int status)
 {
 	if (WIFEXITED(status))
 		sh->excode = WEXITSTATUS(status);
 }
 
-void wait_and_get_exit_code(t_sh *sh, int cpids[], int nb_pipe)
+void wait_and_get_excode(t_sh *sh, int cpids[], int nb_pipe)
 {
 	int status;
 	int i = 0;
 	while (i < nb_pipe + 1)
-	{
-		waitpid(cpids[i], &status, 0);
-		i++;
-	}
-	get_exit_code(sh, status);
+		waitpid(cpids[i++], &status, 0);
+	get_excode(sh, status);
 }
 
 void piping(t_sh *sh, int nb_pipe)
@@ -170,9 +167,15 @@ void piping(t_sh *sh, int nb_pipe)
 		if (cpids[i] == 0)
 		{
 			if (i < nb_pipe)
-				dup2(pipes[i * 2 + 1], 1);
+			{
+				if (dup2(pipes[i * 2 + 1], 1) < 0)
+					exit(errmsg(FATAL, NULL));
+			}
 			if (i > 0)
-				dup2(pipes[(i - 1) * 2], 0);
+			{
+				if (dup2(pipes[(i - 1) * 2], 0) < 0)
+					exit(errmsg(FATAL, NULL));
+			}
 			close_all(pipes, nb_pipe);
 			execve(arg[0], arg, sh->env);
 			exit(errmsg(EXE, arg[0]));
@@ -181,7 +184,7 @@ void piping(t_sh *sh, int nb_pipe)
 		i++;
 	}
 	close_all(pipes, nb_pipe);
-	wait_and_get_exit_code(sh, cpids, nb_pipe);
+	wait_and_get_excode(sh, cpids, nb_pipe);
 }
 
 void non_btin(t_sh *sh)
@@ -201,8 +204,8 @@ void non_btin(t_sh *sh)
 	else
 	{
 		free(arg);
-		wait(&status);
-		get_exit_code(sh, status);
+		waitpid(cpid, &status, 0);
+		get_excode(sh, status);
 	}
 }
 
