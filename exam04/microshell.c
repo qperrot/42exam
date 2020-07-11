@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <stdio.h>
 
 typedef struct s_sh
 {
@@ -50,6 +51,7 @@ int errmsg(int err, char *arg)
 		ft_eprint("error: cannot execute ");
 		ft_eprint(arg);
 		ft_eprint("\n");
+		return 127; // command not found ..?
 	}
 	if (err == BAD_ARG)
 		ft_eprint("error: cd: bad arguments\n");
@@ -85,22 +87,6 @@ char **make_arg(t_sh *sh)
 	return (res);
 }
 
-void btin(t_sh *sh)
-{
-	char **arg = make_arg(sh);
-	int cnt = 0;
-
-	while (arg[cnt])
-		cnt++;
-	if (cnt != 2)
-		sh->excode = errmsg(BAD_ARG, NULL);
-	else if (chdir(arg[1]) == -1)
-		sh->excode = errmsg(BAD_DIR, arg[1]);
-	else
-		sh->excode = 0;
-	free(arg);
-}
-
 int count_pipes(t_sh *sh)
 {
 	int cnt = 0;
@@ -115,22 +101,20 @@ int count_pipes(t_sh *sh)
 	return (cnt);
 }
 
-void create_pipes(int pipes[], int nb_pipe)
+void create_pipe(int pipes[], int nb_pipe, int i)
 {
-	int i = 0;
-	while (i < nb_pipe)
-	{
-		if (pipe(pipes + (i * 2)) < 0)
-			exit(errmsg(FATAL, NULL));
-		i++;
-	}
+	if (i > nb_pipe)
+		return;
+	if (pipe(pipes + (i * 2)) < 0)
+		exit(errmsg(FATAL, NULL));
 }
 
-void close_all(int pipes[], int nb_pipe)
+void close_pipe(int pipes[], int nb_pipe, int i)
 {
-	int i = 0;
-	while (i < 2 * nb_pipe)
-		close(pipes[i++]);
+	if (i < nb_pipe)
+		close(pipes[i * 2 + 1]);
+	if (i > 0)
+		close(pipes[(i - 1) * 2]);
 }
 
 void get_excode(t_sh *sh, int status)
@@ -139,12 +123,10 @@ void get_excode(t_sh *sh, int status)
 		sh->excode = WEXITSTATUS(status);
 }
 
-void wait_and_get_excode(t_sh *sh, int cpids[], int nb_pipe)
+void wait_and_get_excode(t_sh *sh, int cpid)
 {
 	int status;
-	int i = 0;
-	while (i < nb_pipe + 1)
-		waitpid(cpids[i++], &status, 0);
+	waitpid(cpid, &status, 0);
 	get_excode(sh, status);
 }
 
@@ -153,13 +135,13 @@ void piping(t_sh *sh, int nb_pipe)
 	int pipes[nb_pipe * 2];
 	int cpids[nb_pipe + 1];
 
-	create_pipes(pipes, nb_pipe);
 	int i = 0;
 	char **arg;
 	while (i < nb_pipe + 1)
 	{
 		if (ft_strequ(sh->cmd[sh->idx], "|"))
 			sh->idx++;
+		create_pipe(pipes, nb_pipe, i);
 		arg = make_arg(sh);
 		cpids[i] = fork();
 		if (cpids[i] < 0)
@@ -176,15 +158,31 @@ void piping(t_sh *sh, int nb_pipe)
 				if (dup2(pipes[(i - 1) * 2], 0) < 0)
 					exit(errmsg(FATAL, NULL));
 			}
-			close_all(pipes, nb_pipe);
-			execve(arg[0], arg, sh->env);
-			exit(errmsg(EXE, arg[0]));
+			close_pipe(pipes, nb_pipe, i);
+			if (execve(arg[0], arg, sh->env) < 0)
+				exit(errmsg(EXE, arg[0]));
 		}
 		free(arg);
+		close_pipe(pipes, nb_pipe, i);
+		wait_and_get_excode(sh, cpids[i]);
 		i++;
 	}
-	close_all(pipes, nb_pipe);
-	wait_and_get_excode(sh, cpids, nb_pipe);
+}
+
+void btin(t_sh *sh)
+{
+	char **arg = make_arg(sh);
+	int cnt = 0;
+
+	while (arg[cnt])
+		cnt++;
+	if (cnt != 2)
+		sh->excode = errmsg(BAD_ARG, NULL);
+	else if (chdir(arg[1]) == -1)
+		sh->excode = errmsg(BAD_DIR, arg[1]);
+	else
+		sh->excode = 0;
+	free(arg);
 }
 
 void non_btin(t_sh *sh)
@@ -198,8 +196,8 @@ void non_btin(t_sh *sh)
 		exit(errmsg(FATAL, NULL));
 	if (cpid == 0)
 	{
-		execve(arg[0], arg, sh->env);
-		exit(errmsg(EXE, arg[0]));
+		if (execve(arg[0], arg, sh->env) < 0)
+			exit(errmsg(EXE, arg[0]));
 	}
 	else
 	{
