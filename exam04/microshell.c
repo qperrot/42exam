@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <stdio.h>
 
 typedef struct s_sh
 {
@@ -103,7 +102,7 @@ int count_pipes(t_sh *sh)
 
 void create_pipe(int pipes[], int nb_pipe, int i)
 {
-	if (i > nb_pipe)
+	if (i == nb_pipe)
 		return;
 	if (pipe(pipes + (i * 2)) < 0)
 		exit(errmsg(FATAL, NULL));
@@ -229,5 +228,7 @@ int main(int ac, char **av, char **env)
 		else
 			non_btin(&sh);
 	}
+	while(1)
+		;
 	return (sh.excode);
 }
