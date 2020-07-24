@@ -1,0 +1,44 @@
+ASpell.hpp/cpp
+ㄴFwoosh ("Fwoosh", "fwooshed")
+
+ATarget.hpp/cpp
+ㄴDummy.hpp/cpp ("Dummy Practice")
+
+ASpell (abstract class)
+1. attributes
+	name(string)
+	effects(string)
+2. methods
+	ASpell();
+	getters
+	void launch(ATarget const &target) const;
+	-> target 의 getHitBySpell 을 호출한다.
+	virtual ASpell *clone(void) const = 0;
+	-> defined by subclass
+
+ATarget (abstract class)
+1. attributes
+	type(string)
+2. methods
+	getters
+	void getHitBySpell(ASpell const &spell) const;
+	-> [type] has been [spell's effects] 
+	virtual ATarget *clone(void) const = 0;
+	-> defined by subclass
+
+
+Fwoosh
+	ASpell *clone(void) const
+
+Dummy
+	ASpell *clone(void) const
+
+
+- Warlock
+void learnSpell(ASpell *spell)
+-> add spell in vector. if spell already exist, ignore
+void forgetSpell(std::string const &spellName);
+-> remove spell in vector. if spell not exist, ignore
+void launchSpell(std::string const &spellName, ATarget const &target)
+-> find spell and launch.
+

@@ -1,15 +1,3 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   Warlock.cpp                                        :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: ncolomer <ncolomer@student.42.fr>          +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2020/01/16 20:37:13 by ncolomer          #+#    #+#             */
-/*   Updated: 2020/02/13 16:50:14 by ncolomer         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #include "Warlock.hpp"
 
 Warlock::Warlock(std::string const &name, std::string const &title):
@@ -43,17 +31,18 @@ void Warlock::introduce(void) const {
 
 void Warlock::learnSpell(ASpell *spell) {
 	if (spell) {
-		std::vector<ASpell*>::iterator ite = this->spells.end();
-		for (std::vector<ASpell*>::iterator it = this->spells.begin(); it != ite; ++it)
+		std::vector<ASpell *>::iterator it = this->spells.begin();
+		for (; it != this->spells.end(); ++it)
 			if ((*it)->getName() == spell->getName())
-				return ;
+				return;
 		this->spells.push_back(spell->clone());
 	}
 }
 
 void Warlock::forgetSpell(std::string const &spellName) {
-	std::vector<ASpell*>::iterator ite = this->spells.end();
-	for (std::vector<ASpell*>::iterator it = this->spells.begin(); it != ite; ++it) {
+	std::vector<ASpell *>::iterator it = this->spells.begin();
+	for (; it != this->spells.end(); ++it)
+	{
 		if ((*it)->getName() == spellName) {
 			delete *it;
 			it = this->spells.erase(it);
@@ -62,8 +51,9 @@ void Warlock::forgetSpell(std::string const &spellName) {
 }
 
 void Warlock::launchSpell(std::string const &spellName, ATarget const &target) {
-	std::vector<ASpell*>::iterator ite = this->spells.end();
-	for (std::vector<ASpell*>::iterator it = this->spells.begin(); it != ite; ++it) {
+	std::vector<ASpell *>::iterator it = this->spells.begin();
+	for (; it != this->spells.end(); ++it)
+	{
 		if ((*it)->getName() == spellName) {
 			(*it)->launch(target);
 			return ;

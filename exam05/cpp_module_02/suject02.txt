@@ -1,0 +1,44 @@
+ASpell
+ㄴFireball ("Fireball", "burnt to a crisp")
+ㄴFwoosh ("Fwoosh", "fwooshed")
+ㄴPolymorph ("Polymorph", "turned to a sheep")
+
+ATarget
+ㄴBrickWall ("BrickWall Practice")
+ㄴDummy ("Dummy Practice")
+
+TargetGenerator
+1. attribute
+	std::vector<ATarget*> types
+2. methods
+	void learnTargetType(ATarget *type);
+	void forgetTargetType(std::string const &name);
+	ATarget *createTarget(std::string const &name);
+
+SpellBook
+1. attribute
+	std::vector<ASpell*> spells
+2. methods
+	void learnSpell(ASpell *spell)
+	void forgetSpell(std::string const &spellName)
+	ASpell *generateSpell(std::string const &spellName)
+	-> return spell pointer
+
+Warlock
+1. attribute
+	name
+	title
+	SpellBook spellBook
+
+2. methods
+	getName
+	getTitle
+	setTitle
+	introduce
+	learnSpell
+	- calll spellBook's learnSpell
+	forgetSpell
+	- calll spellBook's forgetSpell
+	launchSpell
+	- call spellBook's generateSpell
+	- launch spell

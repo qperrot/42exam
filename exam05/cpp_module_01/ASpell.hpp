@@ -1,15 +1,3 @@
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   ASpell.hpp                                         :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
-/*   By: ncolomer <ncolomer@student.42.fr>          +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2020/01/16 23:06:00 by ncolomer          #+#    #+#             */
-/*   Updated: 2020/02/04 13:03:02 by ncolomer         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
 #ifndef ASPELL_HPP
 # define ASPELL_HPP
 
@@ -25,11 +13,12 @@ private:
 	std::string effects;
 public:
 	ASpell();
-	ASpell(std::string const &name, std::string const &effects);
+	ASpell &operator=(ASpell const &other);
 	ASpell(ASpell const &other);
 	virtual ~ASpell();
 
-	ASpell &operator=(ASpell const &other);
+	ASpell(std::string const &name, std::string const &effects);
+
 
 	std::string const &getName(void) const;
 	std::string const &getEffects(void) const;
