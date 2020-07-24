@@ -8,13 +8,15 @@ TargetGenerator::~TargetGenerator() {
 		delete *it;
 }
 
-void TargetGenerator::learnTargetType(ATarget *type) {
-	if (type) {
+void TargetGenerator::learnTargetType(ATarget *target)
+{
+	if (target)
+	{
 		std::vector<ATarget *>::iterator it = this->targets.begin();
 		for (; it != this->targets.end(); ++it)
-			if ((*it)->getType() == type->getType())
+			if ((*it)->getType() == target->getType())
 				return ;
-		this->targets.push_back(type->clone());
+		this->targets.push_back(target->clone());
 	}
 }
 
