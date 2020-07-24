@@ -7,12 +7,12 @@
 class TargetGenerator
 {
 private:
-	std::vector<ATarget*> types;
+	std::vector<ATarget*> targets;
 public:
 	TargetGenerator();
 	virtual ~TargetGenerator();
 
-	void learnTargetType(ATarget *type);
+	void learnTargetType(ATarget *target);
 	void forgetTargetType(std::string const &name);
 	ATarget *createTarget(std::string const &name);
 };
