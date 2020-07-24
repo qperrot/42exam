@@ -58,5 +58,10 @@ int main(void)
 	richard.launchSpell("ACID", *tarGen.createTarget("Dummy Practice"));
 
 	std::cout << "--- Destructors:\n";
+	delete water;
+	delete fire;
+	delete air;
+	delete hay;
+	delete earth;
 	return (0);
 }

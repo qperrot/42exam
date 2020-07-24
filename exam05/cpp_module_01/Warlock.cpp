@@ -45,7 +45,8 @@ void Warlock::forgetSpell(std::string const &spellName) {
 	{
 		if ((*it)->getName() == spellName) {
 			delete *it;
-			it = this->spells.erase(it);
+			this->spells.erase(it);
+			return;
 		}
 	}
 }

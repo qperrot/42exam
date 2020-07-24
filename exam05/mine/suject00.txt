@@ -1,19 +1,20 @@
-Warlock .cpp / .hpp
+Write class Warlock with coplien form
 1. attribute
 	name (string)
 	title (string)
+
 2. methods
 	Warlock(std::string const &name, std::string const &title);
 	-> name: What a boring day
 	~Warlock()
 	-> name: My job here is done!
-	getters
-	void setTitle(std::string const &title);
-	void introduce(void) const;
-	-> name: My name is name, title!
+	getName
+	getTitle
+	setTitle
+	introduce
+	-> <name>: My name is <name>, <title>!
 
-3. 주의사항
-coplien form
+3. caution
 Warlock warlock; // doesn't compile
 Warlock richard("Richard", "Master of the Universe");
 Warlock warlock(richard); // deoesn't compile
