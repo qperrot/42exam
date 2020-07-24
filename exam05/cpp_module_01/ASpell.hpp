@@ -13,8 +13,8 @@ private:
 	std::string effects;
 public:
 	ASpell();
-	ASpell &operator=(ASpell const &other);
 	ASpell(ASpell const &other);
+	ASpell &operator=(ASpell const &other);
 	virtual ~ASpell();
 
 	ASpell(std::string const &name, std::string const &effects);

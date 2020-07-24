@@ -7,10 +7,10 @@ Warlock::Warlock(std::string const &name, std::string const &title):
 
 Warlock::~Warlock() {
 	std::cout << this->name << ": My job here is done!\n";
-	std::vector<ASpell*>::iterator ite = this->spells.end();
-	for (std::vector<ASpell*>::iterator it = this->spells.begin(); it != ite; ++it)
+	std::vector<ASpell*>::iterator it = this->spells.begin();
+	for (; it != this->spells.end(); ++it)
 		delete *it;
-	this->spells.clear();
+	// this->spells.clear();
 }
 
 std::string const &Warlock::getName(void) const {

@@ -12,13 +12,10 @@ class Warlock
 private:
 	std::string name;
 	std::string title;
-
-	std::vector<ASpell*> spells;
-
 	Warlock();
 	Warlock(Warlock const &other);
-
 	Warlock &operator=(Warlock const &other);
+	std::vector<ASpell*> spells;
 public:
 	Warlock(std::string const &name, std::string const &title);
 	virtual ~Warlock();
