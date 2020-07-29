@@ -8,7 +8,7 @@ class ATarget;
 
 class ASpell
 {
-private:
+protected:
 	std::string name;
 	std::string effects;
 public:
