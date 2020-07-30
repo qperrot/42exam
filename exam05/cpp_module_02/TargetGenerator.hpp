@@ -8,6 +8,8 @@ class TargetGenerator
 {
 private:
 	std::vector<ATarget*> targets;
+	TargetGenerator(TargetGenerator const &other);
+	TargetGenerator &operator=(TargetGenerator const &other);
 public:
 	TargetGenerator();
 	virtual ~TargetGenerator();
