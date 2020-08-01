@@ -228,7 +228,5 @@ int main(int ac, char **av, char **env)
 		else
 			non_btin(&sh);
 	}
-	while(1)
-		;
 	return (sh.excode);
 }
