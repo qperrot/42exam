@@ -10,11 +10,19 @@
 #include <netinet/in.h> // IPPROTO_TCP
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 enum e_err
 {
 	ARG,
 	FATAL,
+};
+
+enum e_broadcast_type
+{
+	LOGIN,
+	LOGOUT,
+	CHAT
 };
 
 typedef struct s_server
@@ -29,6 +37,7 @@ typedef struct s_client
 	int id;
 	int socket;
 	struct sockaddr_in addr;
+	char *data;
 	struct s_client *nxt;
 } t_client;
 
@@ -53,6 +62,7 @@ void eprint(int err)
 	if (err == FATAL)
 		s = "Fatal error\n";
 	write(2, s, strlen(s));
+	perror("");
 	exit(EXIT_FAILURE);
 }
 
@@ -80,14 +90,15 @@ void lst_add_client(t_client *new_cli)
 	new_cli->id = get_server()->assign_id++;
 }
 
-void lst_remove_client(int socket)
+void lst_remove_client(t_client *rm)
 {
 	t_client *bef = get_clients();
 	t_client *cli = bef->nxt;
 
 	while (cli)
 	{
-		if (cli->socket == socket) {
+		if (cli->socket == rm->socket)
+		{
 			bef->nxt = cli->nxt;
 			free(cli);
 			return;
@@ -110,6 +121,49 @@ int get_fdmax()
 	return max;
 }
 
+size_t ft_strlen(char *s)
+{
+	return s ? strlen(s) : 0;
+}
+
+char *ft_strcat(char *dst, char *org)
+{
+	return org ? strcat(dst, org) : dst;
+}
+
+void broadcast(int type, t_client *sender, char *s)
+{
+	t_client *cli = get_clients()->nxt;
+	char buff[4500];
+	char *new_data;
+
+	if (type == LOGIN)
+		sprintf(buff, "server: client %d just arrived\n", sender->id);
+	else if (type == LOGOUT)
+		sprintf(buff, "server: client %d just left\n", sender->id);
+	else if (type == CHAT)
+		sprintf(buff, "client %d: %s", sender->id, s);
+
+	while (cli)
+	{
+		if ((type == CHAT || type == LOGOUT) && cli->id == sender->id) {
+			cli = cli->nxt;
+			continue;
+		}
+		char *res = malloc(ft_strlen(cli->data) + ft_strlen(buff) + 1);
+		if (!res)
+			eprint(FATAL);
+		res[0] = 0;
+		ft_strcat(res, cli->data);
+		ft_strcat(res, buff);
+		if (cli->data)
+			free(cli->data);
+		cli->data = res;
+
+		cli = cli->nxt;
+	}
+}
+
 void manage_server(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 {
 	t_server *srv = get_server();
@@ -118,7 +172,8 @@ void manage_server(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 	if (FD_ISSET(srv->socket, read_set))
 	{
 		t_client *new_cli = calloc(1, sizeof(t_client));
-		new_cli->socket = accept(srv->socket, (struct sockaddr *)&new_cli->addr, sizeof(new_cli->addr));
+		int len = sizeof(struct sockaddr_in);
+		new_cli->socket = accept(srv->socket, (struct sockaddr *)&new_cli->addr, &len);
 		if (new_cli->socket < 0) {
 			free(new_cli);
 			return;
@@ -128,23 +183,62 @@ void manage_server(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 			return;
 		}
 		lst_add_client(new_cli);
+		broadcast(LOGIN, new_cli, NULL);
 		FD_SET(new_cli->socket, init_set);
 	}
+}
+
+void disconnect(t_client *cli, fd_set *init_set)
+{
+	close(cli->socket);
+	FD_CLR(cli->socket, init_set);
+	lst_remove_client(cli);
 }
 
 void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 {
 	t_client *cli = get_clients()->nxt;
-
+	char buff[4096 + 1];
 	while (cli)
 	{
 		if (FD_ISSET(cli->socket, read_set))
 		{
-			ssize_t nb_read = recv(cli->socket, )
+			ssize_t nb_read = recv(cli->socket, buff, 4096, 0);
+			// connection closed by client
+			if (nb_read == 0) {
+				broadcast(LOGOUT, cli, NULL);
+				disconnect(cli, init_set);
+				return;
+			}
+			// data from client side
+			if (nb_read > 0) {
+				buff[nb_read] = 0;
+				broadcast(CHAT, cli, buff);
+			}
 		}
+		if (FD_ISSET(cli->socket, write_set) && cli->data)
+		{
+			int nb_send = send(cli->socket, cli->data, ft_strlen(cli->data), MSG_NOSIGNAL);
+			if (nb_send == ft_strlen(cli->data))
+			{
+				free(cli->data);
+				cli->data = NULL;
+			}
+			else if (nb_send > 0) {
+				char *s = cli->data;
+				int i = nb_send;
+				int j = 0;
+				while (s[i])
+					cli->data[j++] = s[i++];
+				cli->data[j] = 0;
+			}
+		}
+		cli = cli->nxt;
 	}
 }
 
+// Address already in use error 
+// fuser -k [PORT]/tcp
 int main(int ac, char **av)
 {
 	if (ac == 1)
@@ -153,7 +247,7 @@ int main(int ac, char **av)
 	t_server *server = get_server();
 
 	// create server socket
-	if (server->socket = socket(AF_INET, SOCK_STREAM, 0) < 0)
+	if ((server->socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		eprint(FATAL);
 
 	// bind IP/port to socket
@@ -176,8 +270,6 @@ int main(int ac, char **av)
 	FD_ZERO(&init_set);
 	FD_SET(server->socket, &init_set);
 
-	struct timeval timeout;
-
 	// start to run server
 	while (1)
 	{
@@ -185,9 +277,7 @@ int main(int ac, char **av)
 		write_set = init_set;
 
 		// select
-		timeout.tv_sec = 5;
-		timeout.tv_usec = 0;
-		if (select(get_fdmax() + 1, &read_set, &write_set, NULL, &timeout) < 0)
+		if (select(get_fdmax() + 1, &read_set, &write_set, NULL, NULL) < 0)
 			eprint(FATAL);
 
 		// manage client and server
