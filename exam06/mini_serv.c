@@ -2,23 +2,24 @@
 // bind, strstr, malloc, realloc, free, calloc, bzero, atoi, 
 // sprintf, strlen, exit, strcpy, strcat, memset
 
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/select.h>
-#include <sys/socket.h>
-#include <netinet/in.h> // IPPROTO_TCP
-#include <unistd.h>
 #include <fcntl.h>
-#include <stdio.h>
 
-enum e_define
+enum e_def
 {
 	ARG,
 	FATAL,
 	LOGIN,
 	LOGOUT,
-	CHAT
+	CHAT,
+	MAX_BUFF = 4096
 };
 
 typedef struct s_server
@@ -32,8 +33,8 @@ typedef struct s_client
 {
 	int socket;
 	int id;
-	char *data;
 	struct sockaddr_in addr;
+	char *data;
 	struct s_client *nxt;
 } t_client;
 
@@ -58,21 +59,21 @@ void eprint(int err)
 	if (err == FATAL)
 		s = "Fatal error\n";
 	write(2, s, strlen(s));
+	perror("");
 	exit(EXIT_FAILURE);
 }
 
-void lst_add_client(t_client *new_cli)
+void lst_add_client(t_client *new)
 {
 	t_client *cli = get_clients();
 
-	new_cli->id = get_server()->assign_id++;
-	new_cli->data = calloc(1, 1);
-	if (!new_cli->data)
+	new->id = get_server()->assign_id++;
+	new->data = calloc(1, 1);
+	if (!new->data)
 		eprint(FATAL);
-
 	while (cli->nxt)
 		cli = cli->nxt;
-	cli->nxt = new_cli;
+	cli->nxt = new;
 }
 
 void lst_remove_client(t_client *rm)
@@ -96,70 +97,59 @@ void lst_remove_client(t_client *rm)
 
 int get_fdmax()
 {
-	int max = get_server()->socket;
-	t_client *cli = get_clients()->nxt;
-	while (cli)
-	{
-		if (max < cli->socket)
-			max = cli->socket;
+	t_server *srv = get_server();
+	t_client *cli = get_clients();
+
+	while (cli->nxt)
 		cli = cli->nxt;
-	}
-	return max;
+	return (srv->socket > cli->socket ? srv->socket : cli->socket);
 }
 
-void broadcast(int type, t_client *sender, char *s)
+void broadcast(int type, t_client *org, char *s)
 {
 	t_client *cli = get_clients()->nxt;
 	char buff[4500];
-	char *new_data;
 
 	if (type == LOGIN)
-		sprintf(buff, "server: client %d just arrived\n", sender->id);
+		sprintf(buff, "server: client %d just arrived\n", org->id);
 	else if (type == LOGOUT)
-		sprintf(buff, "server: client %d just left\n", sender->id);
+		sprintf(buff, "server: client %d just left\n", org->id);
 	else if (type == CHAT)
-		sprintf(buff, "client %d: %s", sender->id, s);
+		sprintf(buff, "client %d: %s", org->id, s);
 
 	while (cli)
 	{
-		if ((type == CHAT || type == LOGOUT) && cli->id == sender->id) {
+		if (cli->id == org->id)
+		{
 			cli = cli->nxt;
 			continue;
 		}
-		char *res = malloc(strlen(cli->data) + strlen(buff) + 1);
-		if (!res)
+		cli->data = realloc(cli->data, strlen(cli->data) + strlen(buff) + 1);
+		if (!cli->data)
 			eprint(FATAL);
-		res[0] = 0;
-		strcat(res, cli->data);
-		strcat(res, buff);
-		free(cli->data);
-		cli->data = res;
-
+		strcat(cli->data, buff);
 		cli = cli->nxt;
 	}
 }
 
-void manage_server(fd_set *read_set, fd_set *write_set, fd_set *init_set)
+void manage_server(fd_set *read_set, fd_set *init_set)
 {
 	t_server *srv = get_server();
-	t_client *cli_begin = get_clients();
 
 	if (FD_ISSET(srv->socket, read_set))
 	{
-		t_client *new_cli = calloc(1, sizeof(t_client));
+		t_client *new = calloc(1, sizeof(t_client));
 		int len = sizeof(struct sockaddr_in);
-		new_cli->socket = accept(srv->socket, (struct sockaddr *)&new_cli->addr, &len);
-		if (new_cli->socket < 0) {
-			free(new_cli);
+		new->socket = accept(srv->socket, (struct sockaddr *)&new->addr, &len);
+		if (new->socket < 0 || fcntl(new->socket, F_SETFL, O_NONBLOCK) < 0)
+		{
+			free(new);
+			close(new->socket);
 			return;
 		}
-		if (fcntl(new_cli->socket, F_SETFL, O_NONBLOCK) < 0) {
-			free(new_cli);
-			return;
-		}
-		lst_add_client(new_cli);
-		broadcast(LOGIN, new_cli, NULL);
-		FD_SET(new_cli->socket, init_set);
+		lst_add_client(new);
+		broadcast(LOGIN, new, NULL);
+		FD_SET(new->socket, init_set);
 	}
 }
 
@@ -192,7 +182,7 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 				broadcast(CHAT, cli, buff);
 			}
 		}
-		if (FD_ISSET(cli->socket, write_set) && cli->data)
+		if (FD_ISSET(cli->socket, write_set) && cli->data[0])
 		{
 			int nb_send = send(cli->socket, cli->data, strlen(cli->data), MSG_NOSIGNAL);
 			if (nb_send >= 0) {
@@ -246,7 +236,7 @@ int main(int ac, char **av)
 		if (select(get_fdmax() + 1, &read_set, &write_set, NULL, NULL) < 0)
 			eprint(FATAL);
 		manage_clients(&read_set, &write_set, &init_set);
-		manage_server(&read_set, &write_set, &init_set);
+		manage_server(&read_set, &init_set);
 	}
 	return (0);
 }
