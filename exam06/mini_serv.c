@@ -163,13 +163,13 @@ void disconnect(t_client *cli, fd_set *init_set)
 void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 {
 	t_client *cli = get_clients()->nxt;
-	char buff[4096 + 1];
+	char buff[MAX_BUFF + 1];
 
 	while (cli)
 	{
 		if (FD_ISSET(cli->socket, read_set))
 		{
-			ssize_t nb_read = recv(cli->socket, buff, 4096, 0);
+			int nb_read = recv(cli->socket, buff, 4096, 0);
 			// connection closed by client
 			if (nb_read == 0) {
 				broadcast(LOGOUT, cli, NULL);
