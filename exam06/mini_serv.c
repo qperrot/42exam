@@ -59,7 +59,7 @@ void eprint(int err)
 	if (err == FATAL)
 		s = "Fatal error\n";
 	write(2, s, strlen(s));
-	perror("");
+	// perror("");
 	exit(EXIT_FAILURE);
 }
 
@@ -139,6 +139,8 @@ void manage_server(fd_set *read_set, fd_set *init_set)
 	if (FD_ISSET(srv->socket, read_set))
 	{
 		t_client *new = calloc(1, sizeof(t_client));
+		if (!new)
+			eprint(FATAL);
 		int len = sizeof(struct sockaddr_in);
 		new->socket = accept(srv->socket, (struct sockaddr *)&new->addr, &len);
 		if (new->socket < 0 || fcntl(new->socket, F_SETFL, O_NONBLOCK) < 0)
@@ -193,6 +195,8 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 					cli->data[j++] = s[i++];
 				cli->data[j] = 0;
 				cli->data = realloc(cli->data, strlen(cli->data) + 1);
+				if (!cli->data)
+					eprint(FATAL);
 			}
 		}
 		cli = cli->nxt;
@@ -201,34 +205,30 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 
 int main(int ac, char **av)
 {
+	t_server *srv = get_server();
+
 	if (ac == 1)
 		eprint(ARG);
 
-	t_server *server = get_server();
-
-	// create server socket
-	if ((server->socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+	if ((srv->socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		eprint(FATAL);
 
-	// bind IP/port to socket
 	uint32_t localhost = 2130706433;
 	uint16_t port = atoi(av[1]);
-	server->addr.sin_family = AF_INET;
-	server->addr.sin_addr.s_addr = (localhost >> 24 | localhost << 24); // uint32_t
-	server->addr.sin_port = (port >> 8 | port << 8);  // uint16_t
-	if (bind(server->socket, (struct sockaddr *)&server->addr, sizeof(server->addr)) < 0)
+	srv->addr.sin_family = AF_INET;
+	srv->addr.sin_addr.s_addr = (localhost >> 24 | localhost << 24); // uint32_t
+	srv->addr.sin_port = (port >> 8 | port << 8);  // uint16_t
+
+	if (bind(srv->socket, (struct sockaddr *)&srv->addr, sizeof(srv->addr)) < 0)
 		eprint(FATAL);
 
-	// listen
-	if (listen(server->socket, 100) < 0)
+	if (listen(srv->socket, 100) < 0)
 		eprint(FATAL);
 
-	// prepare fdset
 	fd_set read_set, write_set, init_set;
 	FD_ZERO(&init_set);
-	FD_SET(server->socket, &init_set);
+	FD_SET(srv->socket, &init_set);
 
-	// start to run server
 	while (1)
 	{
 		read_set = init_set;
