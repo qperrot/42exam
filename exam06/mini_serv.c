@@ -195,27 +195,20 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 		if (FD_ISSET(cli->socket, write_set) && cli->data)
 		{
 			int nb_send = send(cli->socket, cli->data, strlen(cli->data), MSG_NOSIGNAL);
-			if (nb_send == strlen(cli->data))
-			{
-				free(cli->data);
-				cli->data = calloc(1, 1);
-			}
-			else if (nb_send > 0) {
+			if (nb_send >= 0) {
 				char *s = cli->data;
 				int i = nb_send;
 				int j = 0;
 				while (s[i])
 					cli->data[j++] = s[i++];
 				cli->data[j] = 0;
-				cli->data = realloc(cli->data, strlen(cli->data));
+				cli->data = realloc(cli->data, strlen(cli->data) + 1);
 			}
 		}
 		cli = cli->nxt;
 	}
 }
 
-// Address already in use error 
-// fuser -k [PORT]/tcp
 int main(int ac, char **av)
 {
 	if (ac == 1)
