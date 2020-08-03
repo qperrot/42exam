@@ -12,14 +12,10 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-enum e_err
+enum e_define
 {
 	ARG,
 	FATAL,
-};
-
-enum e_broadcast_type
-{
 	LOGIN,
 	LOGOUT,
 	CHAT
@@ -34,10 +30,10 @@ typedef struct s_server
 
 typedef struct s_client
 {
-	int id;
 	int socket;
-	struct sockaddr_in addr;
+	int id;
 	char *data;
+	struct sockaddr_in addr;
 	struct s_client *nxt;
 } t_client;
 
@@ -62,32 +58,21 @@ void eprint(int err)
 	if (err == FATAL)
 		s = "Fatal error\n";
 	write(2, s, strlen(s));
-	perror("");
 	exit(EXIT_FAILURE);
-}
-
-uint16_t port_to_big_endian(uint16_t port)
-{
-	// ex) 80 port little endian : 01010000  / 00000000
-	return (port >> 8 | port << 8);
-}
-
-uint32_t localhost_to_big_endian()
-{
-	// ex) 127.0.0.1 little endian	: 00000001 00000000 00000000 01111111  = 2130706433
-	// after change to big endian	: 01111111 00000000 00000000 00000001
-	unsigned int ip = 2130706433;
-	return (ip >> 24 | ip << 24);
 }
 
 void lst_add_client(t_client *new_cli)
 {
 	t_client *cli = get_clients();
 
+	new_cli->id = get_server()->assign_id++;
+	new_cli->data = calloc(1, 1);
+	if (!new_cli->data)
+		eprint(FATAL);
+
 	while (cli->nxt)
 		cli = cli->nxt;
 	cli->nxt = new_cli;
-	new_cli->id = get_server()->assign_id++;
 }
 
 void lst_remove_client(t_client *rm)
@@ -100,7 +85,8 @@ void lst_remove_client(t_client *rm)
 		if (cli->socket == rm->socket)
 		{
 			bef->nxt = cli->nxt;
-			free(cli);
+			free(rm->data);
+			free(rm);
 			return;
 		}
 		bef = cli;
@@ -111,7 +97,7 @@ void lst_remove_client(t_client *rm)
 int get_fdmax()
 {
 	int max = get_server()->socket;
-	t_client *cli = get_clients();
+	t_client *cli = get_clients()->nxt;
 	while (cli)
 	{
 		if (max < cli->socket)
@@ -119,16 +105,6 @@ int get_fdmax()
 		cli = cli->nxt;
 	}
 	return max;
-}
-
-size_t ft_strlen(char *s)
-{
-	return s ? strlen(s) : 0;
-}
-
-char *ft_strcat(char *dst, char *org)
-{
-	return org ? strcat(dst, org) : dst;
 }
 
 void broadcast(int type, t_client *sender, char *s)
@@ -150,14 +126,13 @@ void broadcast(int type, t_client *sender, char *s)
 			cli = cli->nxt;
 			continue;
 		}
-		char *res = malloc(ft_strlen(cli->data) + ft_strlen(buff) + 1);
+		char *res = malloc(strlen(cli->data) + strlen(buff) + 1);
 		if (!res)
 			eprint(FATAL);
 		res[0] = 0;
-		ft_strcat(res, cli->data);
-		ft_strcat(res, buff);
-		if (cli->data)
-			free(cli->data);
+		strcat(res, cli->data);
+		strcat(res, buff);
+		free(cli->data);
 		cli->data = res;
 
 		cli = cli->nxt;
@@ -199,6 +174,7 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 {
 	t_client *cli = get_clients()->nxt;
 	char buff[4096 + 1];
+
 	while (cli)
 	{
 		if (FD_ISSET(cli->socket, read_set))
@@ -218,11 +194,11 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 		}
 		if (FD_ISSET(cli->socket, write_set) && cli->data)
 		{
-			int nb_send = send(cli->socket, cli->data, ft_strlen(cli->data), MSG_NOSIGNAL);
-			if (nb_send == ft_strlen(cli->data))
+			int nb_send = send(cli->socket, cli->data, strlen(cli->data), MSG_NOSIGNAL);
+			if (nb_send == strlen(cli->data))
 			{
 				free(cli->data);
-				cli->data = NULL;
+				cli->data = calloc(1, 1);
 			}
 			else if (nb_send > 0) {
 				char *s = cli->data;
@@ -231,6 +207,7 @@ void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
 				while (s[i])
 					cli->data[j++] = s[i++];
 				cli->data[j] = 0;
+				cli->data = realloc(cli->data, strlen(cli->data));
 			}
 		}
 		cli = cli->nxt;
@@ -251,11 +228,11 @@ int main(int ac, char **av)
 		eprint(FATAL);
 
 	// bind IP/port to socket
-	// Network byte order : big endian
-	// Ours byte order : little endian
+	uint32_t localhost = 2130706433;
+	uint16_t port = atoi(av[1]);
 	server->addr.sin_family = AF_INET;
-	server->addr.sin_addr.s_addr = localhost_to_big_endian(); // uint32_t
-	server->addr.sin_port = port_to_big_endian(atoi(av[1]));  // uint16_t
+	server->addr.sin_addr.s_addr = (localhost >> 24 | localhost << 24); // uint32_t
+	server->addr.sin_port = (port >> 8 | port << 8);  // uint16_t
 	if (bind(server->socket, (struct sockaddr *)&server->addr, sizeof(server->addr)) < 0)
 		eprint(FATAL);
 
@@ -265,8 +242,6 @@ int main(int ac, char **av)
 
 	// prepare fdset
 	fd_set read_set, write_set, init_set;
-	FD_ZERO(&read_set);
-	FD_ZERO(&write_set);
 	FD_ZERO(&init_set);
 	FD_SET(server->socket, &init_set);
 
@@ -275,14 +250,10 @@ int main(int ac, char **av)
 	{
 		read_set = init_set;
 		write_set = init_set;
-
-		// select
 		if (select(get_fdmax() + 1, &read_set, &write_set, NULL, NULL) < 0)
 			eprint(FATAL);
-
-		// manage client and server
-		manage_clients(&read_set, &write_set, &init_set); // read/write
-		manage_server(&read_set, &write_set, &init_set);  // accept
+		manage_clients(&read_set, &write_set, &init_set);
+		manage_server(&read_set, &write_set, &init_set);
 	}
 	return (0);
 }
