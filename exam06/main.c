@@ -54,7 +54,7 @@ int main()
     servaddr.sin_addr.s_addr = htonl(2130706433);
     servaddr.sin_port = htons(8081);
 
-    if ((bind(sock_fd, (const struct sock_addr *) &servaddr, sizeof(servaddr)))!= 0)
+    if ((bind(sock_fd, (const struct sockaddr *) &servaddr, sizeof(servaddr)))!= 0)
     {
         printf("Socket binding failed...\n");
         exit(0);
