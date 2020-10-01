@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <sys/types.h>
+#include <netdb.h>
+#include <string.h>
 #include <sys/select.h>
-#include <fcntl.h>
+#include <sys/types.h>
 
 enum e_def
 {
@@ -31,17 +31,14 @@ typedef struct s_client
 	int id;
 	struct sockaddr_in addr;
 	struct s_client *nxt;
+	int status;
 	char *read;
-	char *write;
 } t_client;
 
-t_server *get_server()
-{
-	static t_server srv;
-	return &srv;
-}
+t_server srv;
+fd_set init_set, read_set, write_set;
 
-t_client *get_clients()
+t_client *get_client()
 {
 	static t_client cli;
 	return &cli;
@@ -50,25 +47,34 @@ t_client *get_clients()
 void eprint(int err)
 {
 	char *s;
-
 	if (err == ARG)
 		s = "Wrong number of arguments\n";
 	if (err == FATAL)
 		s = "Fatal error\n";
 	write(2, s, strlen(s));
-	// close(get_server()->socket);
-	// perror("");
-	exit(EXIT_FAILURE);
+	exit(1);
+}
+
+int get_fdmax()
+{
+	int max = srv.socket;
+	t_client *cli = get_client()->nxt;
+
+	while (cli)
+	{
+		if (cli->socket > max)
+			max = cli->socket;
+		cli = cli->nxt;
+	}
+	return max;
 }
 
 void lst_add_client(t_client *new)
 {
-	t_client *cli = get_clients();
-
-	new->id = get_server()->assign_id++;
+	t_client *cli = get_client();
+	new->id = srv.assign_id++;
 	new->read = calloc(1, 1);
-	new->write = calloc(1, 1);
-	if (!new->read || !new->write)
+	if (!new->read)
 		eprint(FATAL);
 	while (cli->nxt)
 		cli = cli->nxt;
@@ -77,16 +83,16 @@ void lst_add_client(t_client *new)
 
 void lst_remove_client(t_client *rm)
 {
-	t_client *bef = get_clients();
+	t_client *bef = get_client();
 	t_client *cli = bef->nxt;
 
 	while (cli)
 	{
 		if (cli->id == rm->id)
 		{
-			bef->nxt = cli->nxt;
+			bef->nxt = rm->nxt;
+			close(rm->socket);
 			free(rm->read);
-			free(rm->write);
 			free(rm);
 			return;
 		}
@@ -95,27 +101,43 @@ void lst_remove_client(t_client *rm)
 	}
 }
 
-int get_fdmax()
+void manage_server()
 {
-	t_server *srv = get_server();
-	t_client *cli = get_clients();
+	if (FD_ISSET(srv.socket, &read_set))
+	{
+		t_client *new = calloc(1, sizeof(t_client));
+		if (!new)
+			eprint(FATAL);
+		socklen_t len = sizeof(new->addr);
+		new->socket = accept(srv.socket, (struct sockaddr *)&new->addr, &len);
+		if (new->socket < 0)
+			eprint(FATAL);
+		lst_add_client(new);
+		FD_SET(new->socket, &init_set);
+		new->status = LOGIN;
+	}
+}
 
-	while (cli->nxt)
-		cli = cli->nxt;
-	return (srv->socket > cli->socket ? srv->socket : cli->socket);
+char *extract(char *source, int len)
+{
+	char *res = malloc(len + 1);
+	if (!res)
+		eprint(FATAL);
+	int i = 0;
+	while (i < len)
+	{
+		res[i] = source[i];
+		i++;
+	}
+	res[i] = 0;
+	return res;
 }
 
 void pop(char **source, int len)
 {
 	char *s = *source;
-	int i = 0;
-	while (s[i + len])
-	{
-		s[i] = s[i + len];
-		i++;
-	}
-	s[i] = 0;
-	s = realloc(s, i + 1);
+	strcpy(s, s + len);
+	s = realloc(s, strlen(s) + 1);
 	if (!s)
 		eprint(FATAL);
 	*source = s;
@@ -131,140 +153,106 @@ void append(char **dest, char *s)
 	*dest = d;
 }
 
-char *extract(char *source, int len)
+void broadcast(t_client *og, char *buff)
 {
-	char *res = malloc(len + 1);
-	if (!res)
-		eprint(FATAL);
-	int i = 0;
-	while (i < len) {
-		res[i] = source[i];
-		i++;
-	}
-	res[i] = 0;
-	return res;
-}
+	t_client *cli = get_client()->nxt;
 
-void broadcast(int type, t_client *org)
-{
-	char buff[MAX_BUFF + 100];
-	if (type == LOGIN)
-		sprintf(buff, "server: client %d just arrived\n", org->id);
-	if (type == LOGOUT)
-		sprintf(buff, "server: client %d just left\n", org->id);
-	if (type == CHAT) {
-		int len = strstr(org->read, "\n") - org->read + 1;
-		char *s = extract(org->read, len);
-		pop(&org->read, len);
-		sprintf(buff, "client %d: %s", org->id, s);
-		free(s);
-	}
-	t_client *cli = get_clients()->nxt;
 	while (cli)
 	{
-		if (cli->id == org->id)
+		if (cli->id != og->id && cli->status != LOGIN && cli->status != LOGOUT && FD_ISSET(cli->socket, &write_set))
 		{
-			cli = cli->nxt;
-			continue;
+			int nb_send = send(cli->socket, buff, strlen(buff), MSG_DONTWAIT);
+			// need to check ... ?
 		}
-		append(&cli->write, buff);
 		cli = cli->nxt;
 	}
 }
 
-void manage_clients(fd_set *read_set, fd_set *write_set, fd_set *init_set)
+void manage_irc()
 {
-	t_client *cli = get_clients()->nxt;
+	t_client *cli = get_client()->nxt;
+	char buff[MAX_BUFF + 50];
+	char *p;
+
+	while (cli)
+	{
+		if (cli->status == LOGIN)
+		{
+			sprintf(buff, "server: client %d just arrived\n", cli->id);
+			broadcast(cli, buff);
+		}
+		else if (cli->status == LOGOUT)
+		{
+			sprintf(buff, "server: client %d just left\n", cli->id);
+			broadcast(cli, buff);
+			t_client *rm = cli;
+			cli = cli->nxt;
+			FD_CLR(rm->socket, &init_set);
+			lst_remove_client(rm);
+			continue;
+		}
+		else if (cli->status == CHAT && (p = strstr(cli->read, "\n")))
+		{
+			int len = p - cli->read + 1;
+			char *s = extract(cli->read, len);
+			pop(&cli->read, len);
+			sprintf(buff, "client %d: %s", cli->id, s);
+			free(s);
+			broadcast(cli, buff);
+		}
+		cli->status = 0;
+		cli = cli->nxt;
+	}
+}
+
+void manage_client()
+{
+	t_client *cli = get_client()->nxt;
 	char buff[MAX_BUFF + 1];
 
 	while (cli)
 	{
-		if (strstr(cli->read, "\n"))
-			broadcast(CHAT, cli);
-		if (FD_ISSET(cli->socket, write_set) && cli->write[0])
+		if (FD_ISSET(cli->socket, &read_set))
 		{
-			int nb_send = send(cli->socket, cli->write, strlen(cli->write), MSG_NOSIGNAL);
-			if (nb_send > 0)
-				pop(&cli->write, nb_send);
-		}
-		if (FD_ISSET(cli->socket, read_set))
-		{
-			int nb_read = recv(cli->socket, buff, MAX_BUFF, 0);
+			int nb_read = recv(cli->socket, buff, MAX_BUFF, MSG_DONTWAIT);
 			if (nb_read == 0)
-			{
-				broadcast(LOGOUT, cli);
-				close(cli->socket);
-				FD_CLR(cli->socket, init_set);
-				lst_remove_client(cli);
-				return;
-			}
-			if (nb_read > 0)
+				cli->status = LOGOUT;
+			else if (nb_read > 0)
 			{
 				buff[nb_read] = 0;
 				append(&cli->read, buff);
+				cli->status = CHAT;
 			}
 		}
 		cli = cli->nxt;
-	}
-}
-
-void manage_server(fd_set *read_set, fd_set *init_set)
-{
-	t_server *srv = get_server();
-
-	if (FD_ISSET(srv->socket, read_set))
-	{
-		t_client *new = calloc(1, sizeof(t_client));
-		if (!new)
-			eprint(FATAL);
-		socklen_t len = sizeof(new->addr);
-		new->socket = accept(srv->socket, (struct sockaddr *)&new->addr, &len);
-		if (new->socket < 0 || fcntl(new->socket, F_SETFL, O_NONBLOCK) < 0)
-		{
-			free(new);
-			close(new->socket);
-			return;
-		}
-		lst_add_client(new);
-		FD_SET(new->socket, init_set);
-		broadcast(LOGIN, new);
 	}
 }
 
 int main(int ac, char **av)
 {
-	t_server *srv = get_server();
-
 	if (ac == 1)
 		eprint(ARG);
-	if ((srv->socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+	if ((srv.socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		eprint(FATAL);
-	if (fcntl(srv->socket, F_SETFL, O_NONBLOCK) < 0)
-		eprint(FATAL);
-		
 	uint32_t localhost = 2130706433;
 	uint16_t port = atoi(av[1]);
-	srv->addr.sin_family = AF_INET;
-	srv->addr.sin_addr.s_addr = (localhost >> 24 | localhost << 24); // uint32_t
-	srv->addr.sin_port = (port >> 8 | port << 8);  // uint16_t
-
-	if (bind(srv->socket, (struct sockaddr *)&srv->addr, sizeof(srv->addr)) < 0)
+	srv.addr.sin_family = AF_INET;
+	srv.addr.sin_addr.s_addr = localhost >> 24 | localhost << 24;
+	srv.addr.sin_port = port >> 8 | port << 8;
+	if (bind(srv.socket, (const struct sockaddr *)&srv.addr, sizeof(srv.addr)) < 0)
 		eprint(FATAL);
-	if (listen(srv->socket, 100) < 0)
+	if (listen(srv.socket, 10) < 0)
 		eprint(FATAL);
-
-	fd_set read_set, write_set, init_set;
-	FD_ZERO(&init_set);
-	FD_SET(srv->socket, &init_set);
-
+	FD_SET(srv.socket, &init_set);
 	while (1)
 	{
 		read_set = init_set;
 		write_set = init_set;
 		if (select(get_fdmax() + 1, &read_set, &write_set, NULL, NULL) < 0)
 			eprint(FATAL);
-		manage_clients(&read_set, &write_set, &init_set);
-		manage_server(&read_set, &init_set);
+		manage_server();
+		manage_client();
+		manage_irc();
 	}
-	return (0);
+	return 0;
 }
