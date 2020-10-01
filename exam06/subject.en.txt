@@ -1,22 +1,25 @@
 Assignment Name: mini_serv
 Expected File: mini_serv.c
 Allowed functions: 
+---------------------------------------------------------
 write, close, select, socket, accept, listen, send, recv, 
 bind, strstr, malloc, realloc, free, calloc, bzero,
 atoi, sprintf, strlen, exit, strcpy, strcat, memset
+---------------------------------------------------------
 
-Write a program that will listen for client to connect on a certain port on 127.0.0.1 and will let clients to speak with each other.
+Write a program that will listen for client to connect on a certain port on 127.0.0.1
+ and will let clients to speak with each other.
+
 This program will take as first argument the port to bind to. 
 -If no argument is given, it should write in stderr: "Wrong number of arguments" followed by a \n and exit with status 1
 -If a system calls returns an error before the program start accpepting connection, it should write in stderr "Fatal error" followed by a \n and exit with status 1
 -If you can't allocate memory, it should write in stderr "Fatal error" followed by a \n and exit with status 1
 
-Your program must be non-blocking , but client can be lazy, if they don't read your message, you must not disconnect them.
+Your program must be non-blocking, but client can be lazy, if they don't read your message, you must not disconnect them.
 
 Your program must not contains #define preproc. 
 Your program must only listen to 127.0.0.1 
-The fd that you will receive will already be set to make 'recv' or 'send' to block 
-if select hasn't been called before calling them, but will not block otherwise.
+The fd that you will receive will already be set to make 'recv' or 'send' to block if select hasn't been called before calling them, but will not block otherwise.
 
 When a client connect to the server
  - the client will be given an id, first client will receive a id 0 and each new client will receive the last client id + 1
@@ -35,5 +38,6 @@ Memory of fd leaks are forbidden.
 To help you with the beginning of a server, we have given you a main.c program. It may have forbidden functions.
 Warning:
  - Tester expects you to be fast, no unnecessary buffer
- - test your code with nc (man nc)
- - you should use fcntl(fd, F_SETFL, O_NONBLOCK)
+ - you can test with nc (man nc)
+ - you should test with nc
+ - To test, you can use fcntl(fd, F_SETFL, O_NONBLOCK), and select() do not check EAGAIN
